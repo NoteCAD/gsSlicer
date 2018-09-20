@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using g3;
+using System.Collections.ObjectModel;
 
 namespace gs
 {
@@ -197,6 +198,6 @@ namespace gs
 		public bool HasFlags {
 			get { return flags != null && has_flags; }
 		}
-		public IReadOnlyList<TPVertexFlags> Flags() { return flags.AsReadOnly(); }
+		public ReadOnlyCollection<TPVertexFlags> Flags() { return flags.AsReadOnly(); }
 	}
 }

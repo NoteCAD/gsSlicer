@@ -77,7 +77,7 @@ namespace gs
 
 
 
-        public IReadOnlyList<DMesh3> Meshes {
+        public List<DMesh3> Meshes {
             get {
                 List<DMesh3> m = new List<DMesh3>();
                 foreach (var mi in meshes)
@@ -86,8 +86,17 @@ namespace gs
             }
         }
 
+		public class Tuple<I1, I2> {
+			public I1 Item1;
+			public I2 Item2;
 
-        public IEnumerable<Tuple<DMesh3,PrintMeshOptions>> MeshesAndOptions()
+			public Tuple(I1 i1, I2 i2) {
+				Item1 = i1;
+				Item2 = i2;
+			}
+		}
+		
+		public IEnumerable<Tuple<DMesh3,PrintMeshOptions>> MeshesAndOptions()
         {
             foreach (var mi in meshes)
                 yield return new Tuple<DMesh3, PrintMeshOptions>(mi.Mesh, mi.Options);

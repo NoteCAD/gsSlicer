@@ -4,10 +4,23 @@ using System.Linq;
 using System.Text;
 using System.Threading;
 using g3;
+using System.Collections;
 
 namespace gs
 {
 
+	public class Progress {
+		public string stage;
+		public int current;
+		public int total;
+
+		public Progress(string s, int c, int t) {
+			stage = s;
+			current = c;
+			total = t;
+		}
+	}
+	
 	/// <summary>
 	/// PrintLayerData is set of information for a single print layer
 	/// </summary>
@@ -161,16 +174,18 @@ namespace gs
 
 
 
-        public virtual bool Generate()
+        public virtual IEnumerable<Progress> Generate()
         {
-            try {
-                generate_result();
+            //try {
+				foreach(var i in generate_result()) {
+					yield return i;
+				}
                 Result = extract_result();
-            } catch ( Exception e ) {
-                ErrorF(e.Message, e.StackTrace);
-                return false;
-            }
-            return true;
+            //} catch ( Exception e ) {
+                //ErrorF(e.Message, e.StackTrace);
+                //return false;
+            //}
+            //return true;
         }
 
 
@@ -221,7 +236,7 @@ namespace gs
         /// <summary>
         /// This is the main driver of the slicing process
         /// </summary>
-        protected virtual void generate_result()
+        protected virtual IEnumerable<Progress> generate_result()
         {
             // should be parameterizable? this is 45 degrees...  (is it? 45 if nozzlediam == layerheight...)
             //double fOverhangAllowance = 0.5 * settings.NozzleDiamMM;
@@ -238,7 +253,9 @@ namespace gs
 			//bool need_slice_spatial = (Settings.GenerateSupport);
 			bool need_slice_spatial = true;  // need this for bridges...
 			if (need_slice_spatial) {
-				Slices.BuildSliceSpatialCaches(true);
+				foreach(var i in Slices.BuildSliceSpatialCaches(false)) {
+					yield return i;
+				}
 			}
 
             // initialize compiler and get start nozzle position
@@ -246,10 +263,12 @@ namespace gs
 
             // We need N above/below shell paths to do roof/floors, and *all* shells to do support.
             // Also we can compute shells in parallel. So we just precompute them all here.
-            precompute_shells();
+			foreach(var i in precompute_shells()) {
+				yield return i;
+			}
             int nLayers = Slices.Count;
 
-            precompute_support_areas();
+            foreach(var i in precompute_support_areas()) yield return i;
 
 			PrintLayerData prevLayerData = null;
 
@@ -259,7 +278,7 @@ namespace gs
             CurStartLayer = Math.Max(0, Settings.LayerRangeFilter.a);
             CurEndLayer = Math.Min(nLayers-1, Settings.LayerRangeFilter.b);
             for ( int layer_i = CurStartLayer; layer_i <= CurEndLayer; ++layer_i ) {
-
+				if(layer_i % 2 == 0) yield return new Progress("paths", layer_i - CurStartLayer, CurEndLayer - CurStartLayer);
 				// allocate new layer data structure
 				PrintLayerData layerdata = PrintLayerDataFactoryF(layer_i, Slices[layer_i], this.Settings);
 				layerdata.PreviousLayer = prevLayerData;
@@ -367,7 +386,7 @@ namespace gs
                     }
                     groupScheduler.EndGroup();
 
-                    shells_gen = shellSelector.Next(groupScheduler.CurrentPosition);
+					shells_gen = shellSelector.Next(groupScheduler.CurrentPosition);
                 }
 
                 // append open paths
@@ -405,8 +424,6 @@ namespace gs
             Compiler.End();
             CurProgress = TotalProgress;
         }
-
-
 
         /// <summary>
         /// fill all infill regions
@@ -820,7 +837,7 @@ namespace gs
         /// <summary>
         /// compute all the shells for the entire slice-stack
         /// </summary>
-        protected virtual void precompute_shells()
+        protected virtual IEnumerable<Progress> precompute_shells()
         {
             int nLayers = Slices.Count;
             LayerShells = new List<IShellsFillPolygon>[nLayers];
@@ -830,11 +847,12 @@ namespace gs
             int end_layer = Math.Min(nLayers - 1, Settings.LayerRangeFilter.b+max_roof_floor);
 
             Interval1i solve_shells = new Interval1i(start_layer, end_layer);
-            gParallel.ForEach(solve_shells, (layeri) => {
+            foreach(var layeri in solve_shells) {
                 PlanarSlice slice = Slices[layeri];
                 LayerShells[layeri] = compute_shells_for_slice(slice);
                 count_progress_step();
-            });
+				if(layeri % 20 == 0) yield return new Progress("shells", layeri - solve_shells.a, solve_shells.Length);
+            }
         }
 
         /// <summary>
@@ -910,34 +928,35 @@ namespace gs
         /// <summary>
         /// compute support volumes for entire slice-stack
         /// </summary>
-        protected virtual void precompute_support_areas()
+        protected virtual IEnumerable<Progress> precompute_support_areas()
         {
-			generate_bridge_areas();
-
+			foreach(var i in generate_bridge_areas()) yield return i;
+			
             if (Settings.GenerateSupport)
-                generate_support_areas();
+                foreach(var i in generate_support_areas()) yield return i;
             else
-                add_existing_support_areas();
+                foreach(var i in add_existing_support_areas()) yield return i;
+			
         }
 
 
 		/// <summary>
         /// Find the unsupported regions in each layer that can be bridged
         /// </summary>
-		protected virtual void generate_bridge_areas()
+		protected virtual IEnumerable<Progress> generate_bridge_areas()
 		{
 			int nLayers = Slices.Count;
 
 			LayerBridgeAreas = new List<GeneralPolygon2d>[nLayers];
 			if (nLayers <= 1)
-				return;
+				yield break;
 
 			// [RMS] does this make sense? maybe should be using 0 here?
 			double bridge_tol = Settings.Machine.NozzleDiamMM * 0.5;
 			double min_area = Settings.Machine.NozzleDiamMM;
 			min_area *= min_area;
 
-			gParallel.ForEach(Interval1i.Range(nLayers - 1), (layeri) => {
+			foreach(var layeri in Interval1i.Range(nLayers - 1)) {
 				PlanarSlice slice = Slices[layeri];
 				PlanarSlice next_slice = Slices[layeri + 1];
 
@@ -954,7 +973,8 @@ namespace gs
 
 				LayerBridgeAreas[layeri] = (bridgePolys != null)
 					? bridgePolys : new List<GeneralPolygon2d>();
-			});
+				if(layeri % 20 == 0) yield return new Progress("bridge_areas", layeri, nLayers);
+			}
 			LayerBridgeAreas[nLayers - 1] = new List<GeneralPolygon2d>();
 
 		}
@@ -965,7 +985,7 @@ namespace gs
         /// Auto-generate the planar solids required to support each area,
         /// and then sweep them downwards.
         /// </summary>
-        protected virtual void generate_support_areas()
+        protected virtual IEnumerable<Progress> generate_support_areas()
         {
             /*
              *  Here is the strategy for computing support areas:
@@ -1023,7 +1043,7 @@ namespace gs
 			int nLayers = Slices.Count;
 			LayerSupportAreas = new List<GeneralPolygon2d>[nLayers];
 			if (nLayers <= 1)
-				return;
+				yield break;
 
 
 			/*
@@ -1032,7 +1052,8 @@ namespace gs
 
 			// For layer i, compute support region needed to support layer (i+1)
 			// This is the *absolute* support area - no inset for filament width or spacing from model
-			gParallel.ForEach(Interval1i.Range(nLayers - 1), (layeri) => {
+			foreach(var layeri in Interval1i.Range(nLayers - 1)) {
+				if(layeri % 10 == 0) yield return new Progress("support_areas_step1", layeri, nLayers);
 				PlanarSlice slice = Slices[layeri];
 				PlanarSlice next_slice = Slices[layeri + 1];
 
@@ -1101,7 +1122,7 @@ namespace gs
 
                 LayerSupportAreas[layeri] = supportPolys;
                 count_progress_step();
-            });
+            };
             LayerSupportAreas[nLayers-1] = new List<GeneralPolygon2d>();
 
 
@@ -1114,6 +1135,7 @@ namespace gs
 			// that layers solids. 
 			List<GeneralPolygon2d> prevSupport = LayerSupportAreas[nLayers - 1];
             for (int i = nLayers - 2; i >= 0; --i) {
+				yield return new Progress("support_areas_step2", nLayers - 2 - i, nLayers - 2);
                 PlanarSlice slice = Slices[i];
 
                 // union down
@@ -1197,7 +1219,7 @@ namespace gs
         /// Settings.GenerateSupport = false, otherwise these solids are included in
         /// precompute_support_areas().  (todo: have that call this?)
         /// </summary>
-        protected virtual void add_existing_support_areas()
+        protected virtual IEnumerable<Progress> add_existing_support_areas()
         {
             // space we leave between support polygons and solids
             double fSupportGapInLayer = Settings.SupportSolidSpace;
@@ -1205,12 +1227,13 @@ namespace gs
             int nLayers = Slices.Count;
             LayerSupportAreas = new List<GeneralPolygon2d>[nLayers];
             if (nLayers <= 1)
-                return;
+                yield break;
 
-            gParallel.ForEach(Interval1i.Range(Slices.Count), (i) => {
+            foreach(var i in Interval1i.Range(Slices.Count)) {
                 PlanarSlice slice = Slices[i];
+				yield return new Progress("existing_support_areas", i, Slices.Count);
                 if (slice.SupportSolids.Count == 0)
-                    return;
+                    continue;
 
                 // if we have explicit support, we can union it in now
                 List<GeneralPolygon2d> combineSupport = slice.SupportSolids;
@@ -1228,7 +1251,7 @@ namespace gs
                 LayerSupportAreas[i] = combineSupport;
 
                 count_progress_step();
-            });
+            }
         }
 
 

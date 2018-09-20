@@ -1,9 +1,10 @@
-﻿﻿using System;
+﻿using System;
 using System.IO;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using g3;
+using System.Collections;
 
 namespace gs
 {
@@ -49,16 +50,21 @@ namespace gs
 
 
 
-		public void BuildSliceSpatialCaches(bool bParallel)
+		public IEnumerable<Progress> BuildSliceSpatialCaches(bool bParallel)
 		{
 			if (bParallel) {
 				gParallel.ForEach(Slices, (slice) => {
 					slice.BuildSpatialCaches();
 				});
 			} else {
-				foreach (var slice in Slices)
+				int i = 0;
+				foreach (var slice in Slices) {
 					slice.BuildSpatialCaches();
+					//yield return new Progress("slice_spatial_caches", i, Slices.Count);
+					i++;
+				}
 			}
+			yield break;
 		}
 
 

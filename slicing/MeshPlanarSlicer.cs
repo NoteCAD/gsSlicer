@@ -2,6 +2,8 @@
 using System.Collections.Generic;
 using System.Threading;
 using g3;
+using UnityEngine;
+using System.Collections;
 
 namespace gs
 {
@@ -130,11 +132,13 @@ namespace gs
         /// <summary>
         /// Slice the meshes and return the slice stack. 
         /// </summary>
-		public PlanarSliceStack Compute()
-		{
-            if (Meshes.Count == 0)
-                return new PlanarSliceStack();
+		public PlanarSliceStack Result;
 
+		public IEnumerable<Progress> Compute()
+		{
+			Result = new PlanarSliceStack();
+            if (Meshes.Count == 0) yield break;
+                
 			Interval1d zrange = Interval1d.Empty;
 			foreach ( var meshinfo in Meshes ) {
 				zrange.Contain(meshinfo.bounds.Min.z);
@@ -170,7 +174,6 @@ namespace gs
             TotalCompute = (Meshes.Count * NH) +  (2*NH);
             Progress = 0;
 
-
             // compute slices separately for each mesh
             for (int mi = 0; mi < Meshes.Count; ++mi ) {
 				DMesh3 mesh = Meshes[mi].mesh;
@@ -187,10 +190,11 @@ namespace gs
                     DefaultOpenPathMode : mesh_options.OpenPathMode;
 
                 // each layer is independent so we can do in parallel
-                gParallel.ForEach(Interval1i.Range(NH), (i) => {
+				foreach(var i in Interval1i.Range(NH)) {
+					if(i % 10 == 0) yield return new Progress("compute_slices", i, NH);
 					double z = heights[i];
 					if (z < bounds.Min.z || z > bounds.Max.z)
-						return;
+						continue;
 
                     // compute cut
                     Polygon2d[] polys; PolyLine2d[] paths;
@@ -246,16 +250,17 @@ namespace gs
                         }
                     }
 
-                    Interlocked.Increment(ref Progress);
-				});  // end of parallel.foreach
+					Interlocked.Increment(ref Progress);
+				}
 				              
 			} // end mesh iter
 
             // resolve planar intersections, etc
-            gParallel.ForEach(Interval1i.Range(NH), (i) => {
+            foreach(var i in Interval1i.Range(NH)) {
+				//yield return new Progress("resolve", i, NH);
                 slices[i].Resolve();
                 Interlocked.Add(ref Progress, 2);
-            });
+            }
 
             // discard spurious empty slices
             int last = slices.Length-1;
@@ -274,7 +279,7 @@ namespace gs
 			if ( SupportMinZTips )
 				stack.AddMinZTipSupportPoints(MinZTipMaxDiam, MinZTipExtraLayers);
 
-			return stack;
+			Result = stack;
 		}
 
 
