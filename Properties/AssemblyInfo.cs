@@ -1,4 +1,4 @@
-﻿#if !G3_USING_UNITY
+﻿#if !UNITY_STANDALONE && !UNITY_EDITOR
 
 using System.Reflection;
 using System.Runtime.CompilerServices;
