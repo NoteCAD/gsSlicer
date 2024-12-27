@@ -37,6 +37,3 @@ thirdparty/clipper_library/bin
 thirdparty/clipper_library/obj
 *.userprefs
 
-
-# unity meta files
-*.meta
