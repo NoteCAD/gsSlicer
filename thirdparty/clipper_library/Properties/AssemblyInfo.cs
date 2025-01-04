@@ -1,4 +1,4 @@
-﻿#if !UNITY_EDITOR && !UNITY_STANDALONE
+﻿#if !UNITY_EDITOR && !UNITY_STANDALONE && !UNITY_WEBGL
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
